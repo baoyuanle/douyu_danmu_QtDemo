@@ -10,7 +10,7 @@ DouyuTcpSocket::DouyuTcpSocket(QObject *parent)
     :QObject(parent)
 {
 
-    this->danmu_rid = "335166";
+    this->danmu_rid = "";
     request_state = "";
     timer = new QTimer(this);
     connect(&tcpDanmuSoc,SIGNAL(connected()),this,SLOT(loginAuth()));
@@ -34,19 +34,19 @@ void DouyuTcpSocket::loginAuth()
 {
     QStringList key_list = (QStringList()
                             <<"type"
-                            <<"username"
-                            <<"password"
+                            //<<"username"
+                            //<<"password"
                             <<"roomid"
-                            <<"rid"
-                            <<"gid"
+                            //<<"rid"
+                            //<<"gid"
                             );
     QStringList value_list = (QStringList()
                               <<"loginreq" //登录请求
-                              <<""
-                              <<""
-                              <<"335166"
+                              //<<""
+                              //<<""
+                              //<<danmu_rid
                               <<danmu_rid //房间号
-                              <<_Douyu_Room_gid //分组
+                              //<<_Douyu_Room_gid //分组
                 );
     QString content = STTSerialization(key_list,value_list);
     this->messageWrite(content);
@@ -66,11 +66,12 @@ void DouyuTcpSocket::readDanmuMessage()
         if(messageMap["type"] == QString("loginres"))
         {//出现表示服务端消息已经发完，可进入下一个步骤
             request_state = "joingroup";
+            qDebug("loginres!");
         }
 
         if(messageMap["type"] == QString("chatmsg")||
-                messageMap["type"] == QString("dgb")||
-                messageMap["type"] == QString("bc_buy_deserve"))
+                messageMap["type"] == QString("dgb"))//||//赠送礼物
+                //messageMap["type"] == QString("bc_buy_deserve"))//用户赠送酬勤通知消息
         {
             emit chatMessage(messageMap);
         }
@@ -99,15 +100,21 @@ void DouyuTcpSocket::readDanmuMessage()
 
 void DouyuTcpSocket::messageWrite(QString &content)
 {
+    qDebug()<<"messageWrite:"<<content;
     const char *content_ptr = content.toStdString().c_str();
+    char *pCont = new char[content.length()+1];
+    memcpy(pCont, content_ptr, content.length());
+    pCont[content.length()]=0;
     QDataStream sendOut(&outBlock,QIODevice::WriteOnly);
     qint32 length = 4 + 4 + content.length() + 1;// 2个uint32字段长度+内容长度+'\0'
     sendOut<<qint32(hexReverse_qint32(length))<<qint32(hexReverse_qint32(length))<<qint32(_Douyu_CTS_Num);
-    outBlock.append(content_ptr);
+    outBlock.append(pCont,content.length());
     outBlock.append('\0');
-    tcpDanmuSoc.write(outBlock);
-    outBlock.resize(0);
-    delete content_ptr;
+    auto iWrited = tcpDanmuSoc.write(outBlock);
+    qDebug()<<"iWrited:"<<iWrited;
+    qDebug()<<"iWrited:"<<outBlock;
+    outBlock.clear();
+    delete []pCont;
 }
 
 void DouyuTcpSocket::connectDanmuServer(QString &roomid)
@@ -118,9 +125,28 @@ void DouyuTcpSocket::connectDanmuServer(QString &roomid)
         tcpDanmuSoc.abort();
     }
     danmu_rid = roomid;
-    tcpDanmuSoc.connectToHost(_Douyu_DanmuServer_HostName,
+    for(int i=0;i<5;++i)
+    {
+        tcpDanmuSoc.connectToHost(_Douyu_DanmuServer_HostName,
                               _Douyu_DanmuServer_Port);
+        if (tcpDanmuSoc.waitForConnected(2000))
+              {
+            qDebug("Connected!");
+            break;
+        }
+        else {
+            tcpDanmuSoc.abort();
+        }
+    }
+}
 
+void DouyuTcpSocket::close()
+{
+    if(tcpDanmuSoc.state() == QAbstractSocket::ConnectedState)
+    {
+        tcpDanmuSoc.abort();
+    }
+    timer->stop();
 }
 
 void DouyuTcpSocket::displayError(QAbstractSocket::SocketError error)
@@ -139,12 +165,9 @@ void DouyuTcpSocket::keepAlive()
         QString tick = QString::number(QDateTime::currentMSecsSinceEpoch()/1000);
         QStringList key_list = (QStringList()
                                 <<"type"
-                                <<"tick"
-
                                 );
         QStringList value_list = (QStringList()
-                                  <<"keeplive" //登录请求
-                                  <<tick //时间戳
+                                  <<"mrkl" //登录请求
                     );
         QString content = STTSerialization(key_list,value_list);
         this->messageWrite(content);
@@ -155,44 +178,6 @@ void DouyuTcpSocket::keepAlive()
 void DouyuTcpSocket::stateChanged(QAbstractSocket::SocketState state)
 {
     qDebug()<<state;
-    QString datetime = QDateTime::currentDateTime().toString("MM-dd hh:mm:ss");
-    QString roomid = danmu_rid;
-    QString cur_state = "";
-
-    /*
-     * type = connectstate
-     * time = time
-     * state = state
-     * roomid = roomid
-     * [04-18 09:38:21] 房间号:09900 连接中...
-     */
-    if(QAbstractSocket::HostLookupState == state)
-    {
-        cur_state = "主机查询中...";
-    }
-    else if(QAbstractSocket::ConnectingState == state)
-    {
-        cur_state = "连接弹幕服务器中...";
-    }
-    else if(QAbstractSocket::ConnectedState == state)
-    {
-        cur_state = "弹幕服务器连接成功...";
-    }
-    else if(QAbstractSocket::ClosingState == state)
-    {
-        cur_state = "弹幕服务器连接关闭...";
-    }
-    else if(QAbstractSocket::UnconnectedState == state)
-    {
-        cur_state = "未连接服务器...";
-    }
-
-    QMap<QString,QString> map;
-    map.insert(QString("type"),QString("connectstate"));
-    map.insert(QString("time"),datetime);
-    map.insert(QString("state"),cur_state);
-    map.insert(QString("roomid"),roomid);
-    emit chatMessage(map);
 }
 
 QString DouyuTcpSocket::STTSerialization(QStringList &key_list,QStringList &value_list)

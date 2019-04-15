@@ -9,11 +9,6 @@ StringGenerator::StringGenerator()
 
 }
 
-QString StringGenerator::getDashedLine()
-{
-    return TE(QString("#787775"),QString("consolas"),QString("----------------------------"));
-}
-
 QString StringGenerator::getString(QMap<QString, QString> &messageMap)
 {
     QString str = "";
@@ -29,6 +24,8 @@ QString StringGenerator::getString(QMap<QString, QString> &messageMap)
                 .arg(TE(font_color_red,font_Con,"[lv."+messageMap["level"]+"]"))
                 .arg(TE(font_color_blue,font_MS,":"))
                 .arg(TE(font_color_black,font_MS,messageMap["txt"]));
+
+        //str ="";
      }
 
     else if(messageMap["type"] == "onlinegift") //领取鱼丸暴击
@@ -66,8 +63,23 @@ QString StringGenerator::getString(QMap<QString, QString> &messageMap)
         case 59:
             gfid_str = "500鱼翅(火箭)";
             break;
+        case 192:
+            gfid_str = "赞";
+            break;
+        case 193:
+            gfid_str = "弱鸡";
+            break;
+        case 520:
+            gfid_str = "稳";
+            break;
+        case 713:
+            gfid_str = "辣眼睛";
+            break;
+        case 824:
+            gfid_str = "荧光棒";
+            break;
         default:
-            gfid_str = "什么鬼?(礼物)";
+            gfid_str = QString("什么鬼?(不清楚:%1)").arg(gfid);
             break;
         }
         str = QString("%1 %2 %3").arg(TE(font_color_blue,font_MS,messageMap["nn"]))
@@ -83,12 +95,6 @@ QString StringGenerator::getString(QMap<QString, QString> &messageMap)
                 .arg(TE(font_color_red,font_MS,"赠送数量:"+messageMap["cnt"]))
                 .arg(TE(font_color_blue,font_MS,"酬勤等级:"+messageMap["lev"]))
                 .arg(TE(font_color_black,font_MS,"用户信息:"+messageMap["sui"]));
-    }
-    else if(messageMap["type"] == "connectstate")
-    {
-        str = QString("%1 %2 %3").arg(TE(font_color_red,font_Con,"["+messageMap["time"]+"]"))
-                .arg(TE(font_color_blue,font_MS,"房间号:"+messageMap["roomid"]))
-                .arg(TE(font_color_black,font_MS,messageMap["state"]));
     }
     else
     {

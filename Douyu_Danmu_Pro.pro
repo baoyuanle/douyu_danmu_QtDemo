@@ -6,7 +6,7 @@
 
 QT       += core gui network
 
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+QT += widgets
 
 TARGET = Douyu_Danmu_Pro
 TEMPLATE = app
@@ -17,13 +17,22 @@ SOURCES += main.cpp\
     networkaccess.cpp \
     jsonparse.cpp \
     douyutcpsocket.cpp \
-    stringgenerator.cpp
+    stringgenerator.cpp \
+    singlecar.cpp \
+    scarrankmodel.cpp
 
 HEADERS  += mainwindow.h \
     networkaccess.h \
     jsonparse.h \
     danmuconfig.h \
     douyutcpsocket.h \
-    stringgenerator.h
+    stringgenerator.h \
+    singlecar.h \
+    scarrankmodel.h
 
 FORMS    += mainwindow.ui
+
+DISTFILES +=
+
+RESOURCES += \
+    img.qrc

@@ -56,6 +56,7 @@ private slots:
     void stateChanged(QAbstractSocket::SocketState state);
 public:
     void connectDanmuServer(QString &roomid); //连接弹幕服务器信号槽
+    void close();
     /**
      * @brief STTSerialization
      * STT序列化

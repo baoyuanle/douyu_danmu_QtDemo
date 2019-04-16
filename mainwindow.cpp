@@ -108,7 +108,7 @@ void MainWindow::onClose()
 }
 
 namespace  {
-    const static QString c_url = "http://hd215.api.yesapi.cn/";
+    const static QString c_url = "http://改成你的.api.yesapi.cn/";
     QString mkUrl(const QMap<QString, QString> &hash)
     {
         QString str = "?";

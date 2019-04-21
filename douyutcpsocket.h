@@ -16,16 +16,14 @@ class DouyuTcpSocket:public QObject
 {
     Q_OBJECT
 public:
-    DouyuTcpSocket(QObject *parent = 0);
+    DouyuTcpSocket(QObject *parent = nullptr);
     ~DouyuTcpSocket();
 
-    QTimer *timer;
-    QTcpSocket tcpDanmuSoc;
-    QByteArray outBlock;
 signals:
 
-    void chatMessage(QMap<QString,QString>);
+    void chatMessage(const QMap<QString, QString> &massage);
     void chatMessageString(QString);
+    void sigUpdateStat(const QString &str);
 
 private:
 
@@ -42,8 +40,6 @@ private:
      * @param content
      */
     void messageWrite(QString &content);
-    QString danmu_rid; //roomid
-    QString request_state;
 private slots:
     /**
      * @brief loginAuth
@@ -54,8 +50,12 @@ private slots:
     void displayError(QAbstractSocket::SocketError error);
     void keepAlive();//发送心跳包
     void stateChanged(QAbstractSocket::SocketState state);
-public:
-    void connectDanmuServer(QString &roomid); //连接弹幕服务器信号槽
+    void onConnect(const QString &room);
+    void onClose();
+    void onTimerRec();
+private:
+    void connectDanmuServer(); //连接弹幕服务器信号槽
+    void reconnect();
     void close();
     /**
      * @brief STTSerialization
@@ -72,6 +72,14 @@ public:
      * @return
      */
     QMap<QString,QString> STTDeserialization(QString &ser_str);
+
+    QString danmu_rid; //roomid
+    QString request_state;
+    bool m_bAutoRecennect{false};
+    QTimer *timerHeart{nullptr};
+    QTimer *timerReconnect{nullptr};
+    QTcpSocket *pTcpDanmuSoc{nullptr};
+    QByteArray outBlock;
 };
 
 #endif // DOUYUTCPSOCKET_H

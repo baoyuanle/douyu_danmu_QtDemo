@@ -41,8 +41,9 @@ QList<ChatMsg> singleCar::getRank()
     return lsRank;
 }
 
-void singleCar::onNewMsg(QMap<QString, QString> massage)
+void singleCar::onNewMsg(const QMap<QString, QString> &massage)
 {
+    //qDebug()<<"onNewMsg Thread id:"<<QThread::currentThreadId();
     if(QString("chatmsg") != massage["type"])
     {
         return;

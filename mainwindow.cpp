@@ -10,6 +10,9 @@
 #include <QMap>
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QStatusBar>
+#include <QLabel>
+#include <QThread>
 
 MainWindow::MainWindow(QWidget *parent):
     QMainWindow(parent),
@@ -30,21 +33,39 @@ MainWindow::MainWindow(QWidget *parent):
     ui->cmbRoom->addItem("5377067","5377067");
     ui->cmbRoom->addItem("99999","99999");
     ui->cmbRoom->addItem("156277","156277");
+    ui->cmbRoom->addItem("610588","610588");
+
+    //状态栏
+    QStatusBar * sBar = statusBar();//创建状态栏
+    m_pLabStat = new QLabel(this);
+    m_pLabStat->setText(tr("未连接"));
+    sBar->addWidget(m_pLabStat);//状态栏添加组件
+
     m_pRankModel = new SCarRankModel();
     ui->tableRank->setModel(m_pRankModel);
     ui->tableRank->setColumnWidth(1,300);
     network_access = new NetworkAccess();
-    tcpSocket = new DouyuTcpSocket(this);
-    m_pSCar = new singleCar(this);
+    tcpSocket = new DouyuTcpSocket();
+    m_pThSocket = new QThread();
+    tcpSocket->moveToThread(m_pThSocket);
+    m_pThSocket->start();
+    m_pSCar = new singleCar();
+    m_pThSCar = new QThread();
+    m_pSCar->moveToThread(m_pThSCar);
+    m_pThSCar->start();
     connect(ui->pushButton,SIGNAL(clicked(bool)),this,SLOT(start()));
     connect(ui->btnClear,SIGNAL(clicked(bool)),this,SLOT(onClear()));
     connect(ui->btnStop,SIGNAL(clicked(bool)),this,SLOT(onClose()));
     connect(ui->btnUpload,SIGNAL(clicked(bool)),this,SLOT(onUpload()));
+    connect(ui->btnExpand,SIGNAL(clicked(bool)),this,SLOT(onExpand()));
     connect(ui->cmbRoom, SIGNAL(currentIndexChanged(int)), this, SLOT(onCmbChange(int)));
     connect(network_access,SIGNAL(pageLoadFinished(QString)),
             this,SLOT(htmlContent(QString)));
+    connect(this, SIGNAL(sigConnectDM(const QString&)), tcpSocket, SLOT(onConnect(const QString&)));
+    connect(this, SIGNAL(sigCloseDM()), tcpSocket, SLOT(onClose()));
     connect(tcpSocket,SIGNAL(chatMessage(QMap<QString,QString>)),this,SLOT(showChatMessage(QMap<QString,QString>)));
     connect(tcpSocket,SIGNAL(chatMessage(QMap<QString,QString>)),m_pSCar,SLOT(onNewMsg(QMap<QString,QString>)));
+    connect(tcpSocket,SIGNAL(sigUpdateStat(const QString &)), this, SLOT(onUpdateStat(const QString &)));
     connect(m_pSCar,SIGNAL(sigUpdateRank()),this,SLOT(onUpdateRank()));
     if(m_bTray)
     {
@@ -65,6 +86,11 @@ MainWindow::MainWindow(QWidget *parent):
 
 MainWindow::~MainWindow()
 {
+    m_pThSocket->exit();
+    m_pThSocket->deleteLater();
+    m_pThSCar->exit();
+    m_pThSCar->deleteLater();
+    delete m_pSCar;
     delete tcpSocket;
     delete network_access;
     delete ui;
@@ -88,7 +114,7 @@ void MainWindow::start()
         else
         {
             qDebug()<<"connectting,roomid:"<<roomid;
-            tcpSocket->connectDanmuServer(roomid);
+            emit sigConnectDM(roomid);
         }
     }
     else
@@ -104,7 +130,7 @@ void MainWindow::onClear()
 
 void MainWindow::onClose()
 {
-    tcpSocket->close();
+    emit sigCloseDM();
 }
 
 namespace  {
@@ -165,6 +191,22 @@ void MainWindow::onUpload()
             msg = vMsg.value<ChatMsg>();
             uploadMsg(&msg);
         }
+    }
+}
+
+void MainWindow::onExpand()
+{
+    if("both"==ui->btnExpand->text()){
+        ui->btnExpand->setText("txt");
+        ui->plainTextLog->hide();
+    }else if ("txt"==ui->btnExpand->text()) {
+        ui->btnExpand->setText("log");
+        ui->plainTextEdit->hide();
+        ui->plainTextLog->show();
+    }else if ("log"==ui->btnExpand->text()) {
+        ui->btnExpand->setText("both");
+        ui->plainTextEdit->show();
+        ui->plainTextLog->show();
     }
 }
 
@@ -248,8 +290,21 @@ void MainWindow::postFinished()
     pReply = nullptr;
 }
 
+void MainWindow::onUpdateStat(const QString &str)
+{
+    m_pLabStat->setText(str);
+    onLog(str);
+}
+
+void MainWindow::onLog(const QString &str)
+{
+    QDateTime tm = QDateTime::currentDateTime();
+    ui->plainTextLog->appendHtml(tm.toString("MM-dd hh:mm:ss ")+str);
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    emit sigCloseDM();
     if(m_pTray)
     {
         if(m_pTray->isVisible()){
@@ -282,7 +337,7 @@ void MainWindow::htmlContent(const QString html)
     if(parse.init(json))
     {
         QString roomid = parse.getJsonValue(_Douyu_RoomId);
-        tcpSocket->connectDanmuServer(roomid);
+        emit sigConnectDM(roomid);
     }
     else
     {
@@ -293,7 +348,7 @@ void MainWindow::htmlContent(const QString html)
 
 }
 
-void MainWindow::showChatMessage(QMap<QString,QString> messageMap)
+void MainWindow::showChatMessage(const QMap<QString, QString> &messageMap)
 {
     /*QString nickname = messageMap["nn"];
     QString level = messageMap["level"];
@@ -310,9 +365,4 @@ void MainWindow::showChatMessage(QMap<QString,QString> messageMap)
        // qDebug()<<messageMap["nn"]<<messageMap["txt"]<<"sgggg";
     }
 
-}
-
-void MainWindow::showChatMessageString(QString message)
-{
-    ui->plainTextEdit->appendPlainText(message);
 }

@@ -4,29 +4,20 @@
 #include <QDateTime>
 #include <QHostAddress>
 #include <QDataStream>
-
+#include <thread>
+#include <QMetaType>
 
 DouyuTcpSocket::DouyuTcpSocket(QObject *parent)
     :QObject(parent)
 {
-
-    this->danmu_rid = "";
-    request_state = "";
-    timer = new QTimer(this);
-    connect(&tcpDanmuSoc,SIGNAL(connected()),this,SLOT(loginAuth()));
-    connect(&tcpDanmuSoc,SIGNAL(readyRead()),this,SLOT(readDanmuMessage()));
-    connect(&tcpDanmuSoc,SIGNAL(error(QAbstractSocket::SocketError)),
-            this,SLOT(displayError(QAbstractSocket::SocketError)));
-    connect(&tcpDanmuSoc,SIGNAL(stateChanged(QAbstractSocket::SocketState)),
-            this,SLOT(stateChanged(QAbstractSocket::SocketState)));
-    connect(timer,SIGNAL(timeout()),this,SLOT(keepAlive()));
-
-
+    qRegisterMetaType<QMap<QString, QString>>("QMap<QString, QString>");
 }
 
 DouyuTcpSocket::~DouyuTcpSocket()
 {
-    tcpDanmuSoc.close();
+    if(pTcpDanmuSoc){
+        pTcpDanmuSoc->abort();
+    }
 }
 
 
@@ -55,7 +46,7 @@ void DouyuTcpSocket::loginAuth()
 
 void DouyuTcpSocket::readDanmuMessage()
 {
-    QByteArray inBlock = tcpDanmuSoc.readAll(); //接收数据块
+    QByteArray inBlock = pTcpDanmuSoc->readAll(); //接收数据块
     QString content;
     int pos = 0;
     while((pos = inBlock.indexOf(QString("type"),pos)) != -1)
@@ -94,7 +85,12 @@ void DouyuTcpSocket::readDanmuMessage()
         QString content = STTSerialization(key_list,value_list);
         this->messageWrite(content);
         request_state = "receiveDanmu";
-        timer->start(_Douyu_DanmuServer_Intervals);
+        qDebug()<<"joingroup";
+        if(nullptr == timerHeart){
+            timerHeart = new QTimer(this);
+            connect(timerHeart,SIGNAL(timeout()),this,SLOT(keepAlive()));
+        }
+        timerHeart->start(_Douyu_DanmuServer_Intervals);
     }
 }
 
@@ -110,59 +106,87 @@ void DouyuTcpSocket::messageWrite(QString &content)
     sendOut<<qint32(hexReverse_qint32(length))<<qint32(hexReverse_qint32(length))<<qint32(_Douyu_CTS_Num);
     outBlock.append(pCont,content.length());
     outBlock.append('\0');
-    auto iWrited = tcpDanmuSoc.write(outBlock);
+    auto iWrited = pTcpDanmuSoc->write(outBlock);
     qDebug()<<"iWrited:"<<iWrited;
     qDebug()<<"iWrited:"<<outBlock;
     outBlock.clear();
     delete []pCont;
 }
 
-void DouyuTcpSocket::connectDanmuServer(QString &roomid)
+void DouyuTcpSocket::connectDanmuServer()
 {
+    qDebug()<<"connectDanmuServer currentThreadId:"<<QThread::currentThreadId();
+    request_state="";
+    if(nullptr == pTcpDanmuSoc){
+        pTcpDanmuSoc = new QTcpSocket(this);
+        connect(pTcpDanmuSoc,SIGNAL(connected()),this,SLOT(loginAuth()));
+        connect(pTcpDanmuSoc,SIGNAL(readyRead()),this,SLOT(readDanmuMessage()));
+        connect(pTcpDanmuSoc,SIGNAL(error(QAbstractSocket::SocketError)),
+                this,SLOT(displayError(QAbstractSocket::SocketError)));
+        connect(pTcpDanmuSoc,SIGNAL(stateChanged(QAbstractSocket::SocketState)),
+                this,SLOT(stateChanged(QAbstractSocket::SocketState)));
+    }
+    if(pTcpDanmuSoc->state() == QAbstractSocket::ConnectedState)
+    {
+        pTcpDanmuSoc->abort();
+    }
+    pTcpDanmuSoc->connectToHost(_Douyu_DanmuServer_HostName,
+                          _Douyu_DanmuServer_Port);
+    if (pTcpDanmuSoc->waitForConnected(2000)) {
+        qDebug("Connected!");
+    }
+    else {
+        pTcpDanmuSoc->abort();
+        qDebug("aborted!");
+    }
+}
 
-    if(tcpDanmuSoc.state() == QAbstractSocket::ConnectedState)
-    {
-        tcpDanmuSoc.abort();
+void DouyuTcpSocket::reconnect()
+{
+    qDebug()<<"reconnect...";
+    if(nullptr == timerReconnect){
+        timerReconnect = new QTimer(this);
+        timerReconnect->setInterval(500);
+        timerReconnect->setSingleShot(true);
+        connect(timerReconnect, SIGNAL(timeout()), this, SLOT(onTimerRec()));
     }
-    danmu_rid = roomid;
-    for(int i=0;i<5;++i)
-    {
-        tcpDanmuSoc.connectToHost(_Douyu_DanmuServer_HostName,
-                              _Douyu_DanmuServer_Port);
-        if (tcpDanmuSoc.waitForConnected(2000))
-              {
-            qDebug("Connected!");
-            break;
-        }
-        else {
-            tcpDanmuSoc.abort();
-        }
-    }
+    timerReconnect->start();
 }
 
 void DouyuTcpSocket::close()
 {
-    if(tcpDanmuSoc.state() == QAbstractSocket::ConnectedState)
-    {
-        tcpDanmuSoc.abort();
+    m_bAutoRecennect = false;
+    if(pTcpDanmuSoc){
+        pTcpDanmuSoc->abort();
     }
-    timer->stop();
+    if(timerHeart){
+        timerHeart->stop();
+    }
+    if(timerReconnect){
+        timerReconnect->stop();
+    }
+    request_state="";
 }
 
 void DouyuTcpSocket::displayError(QAbstractSocket::SocketError error)
 {
-
-    QString error_str = tcpDanmuSoc.errorString();
+    Q_UNUSED(error);
+    QString error_str = pTcpDanmuSoc->errorString();
+    //tcpDanmuSoc.close();
+    error_str = tr("网络错误：")+error_str;
     qDebug()<<error_str;
-    tcpDanmuSoc.close();
+    if(m_bAutoRecennect){
+        emit sigUpdateStat(error_str + tr(" 正在重连。。。"));
+        reconnect();
+    }else{
+        emit sigUpdateStat(error_str);
+    }
 }
 
 void DouyuTcpSocket::keepAlive()
 {
-    timer->stop();
     if(request_state == "receiveDanmu")
     {
-        QString tick = QString::number(QDateTime::currentMSecsSinceEpoch()/1000);
         QStringList key_list = (QStringList()
                                 <<"type"
                                 );
@@ -172,12 +196,62 @@ void DouyuTcpSocket::keepAlive()
         QString content = STTSerialization(key_list,value_list);
         this->messageWrite(content);
     }
-    timer->start(_Douyu_DanmuServer_Intervals);
 }
 
 void DouyuTcpSocket::stateChanged(QAbstractSocket::SocketState state)
 {
     qDebug()<<state;
+    bool reConnect = false;
+    QString str;
+    switch (state) {
+    case QAbstractSocket::UnconnectedState:
+        str = tr("未连接");
+        reConnect=true;
+        break;
+    case QAbstractSocket::HostLookupState:
+        str = tr("解析服务器。。。");
+        break;
+    case QAbstractSocket::ConnectingState:
+        str = tr("连接中。。。");
+        break;
+    case QAbstractSocket::ConnectedState:
+        str = tr("已连接");
+        break;
+    case QAbstractSocket::ClosingState:
+        str = tr("断开连接中。。。");
+        break;
+    case QAbstractSocket::BoundState:
+    case QAbstractSocket::ListeningState:
+        break;
+    }
+    if(!str.isEmpty()){
+        emit sigUpdateStat(str);
+    }
+    if(reConnect && m_bAutoRecennect){
+        emit sigUpdateStat(tr("正在重连。。。"));
+        reconnect();
+    }
+}
+
+void DouyuTcpSocket::onConnect(const QString &room)
+{
+    m_bAutoRecennect = true;
+    danmu_rid = room;
+    connectDanmuServer();
+}
+
+void DouyuTcpSocket::onClose()
+{
+    qDebug()<<"onClose";
+    close();
+}
+
+void DouyuTcpSocket::onTimerRec()
+{
+    if(!m_bAutoRecennect){
+        return;
+    }
+    connectDanmuServer();
 }
 
 QString DouyuTcpSocket::STTSerialization(QStringList &key_list,QStringList &value_list)
@@ -192,9 +266,6 @@ QString DouyuTcpSocket::STTSerialization(QStringList &key_list,QStringList &valu
     }
     return list.join('/');
 }
-
-
-
 
 QString DouyuTcpSocket::STTSerialization(QMap<QString, QString> &map)
 {

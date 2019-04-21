@@ -29,7 +29,7 @@ public:
 signals:
     void sigUpdateRank();
 private slots:
-    void onNewMsg(QMap<QString,QString>);
+    void onNewMsg(const QMap<QString, QString> &);
 private:
     void updateRank(const ChatMsg &msg);
 private:

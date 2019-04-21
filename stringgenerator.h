@@ -10,7 +10,7 @@ class StringGenerator
 {
 public:
     StringGenerator();
-    static QString getString(QMap<QString,QString> &messageMap);
+    static QString getString(const QMap<QString,QString> &messageMap);
 private:
     static QString TE(QString color, QString font_family, QString txt);
 

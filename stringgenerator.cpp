@@ -9,7 +9,7 @@ StringGenerator::StringGenerator()
 
 }
 
-QString StringGenerator::getString(QMap<QString, QString> &messageMap)
+QString StringGenerator::getString(const QMap<QString, QString> &messageMap)
 {
     QString str = "";
     QString font_color_blue = "#3B91C5";

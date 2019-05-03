@@ -11,6 +11,7 @@ DouyuTcpSocket::DouyuTcpSocket(QObject *parent)
     :QObject(parent)
 {
     qRegisterMetaType<QMap<QString, QString>>("QMap<QString, QString>");
+    m_uPort = _Douyu_DanmuServer_Port;
 }
 
 DouyuTcpSocket::~DouyuTcpSocket()
@@ -18,6 +19,11 @@ DouyuTcpSocket::~DouyuTcpSocket()
     if(pTcpDanmuSoc){
         pTcpDanmuSoc->abort();
     }
+}
+
+void DouyuTcpSocket::setPort(unsigned short port)
+{
+    m_uPort = port;
 }
 
 
@@ -130,14 +136,20 @@ void DouyuTcpSocket::connectDanmuServer()
     {
         pTcpDanmuSoc->abort();
     }
-    pTcpDanmuSoc->connectToHost(_Douyu_DanmuServer_HostName,
-                          _Douyu_DanmuServer_Port);
+    if(m_uConFailTime>=3){//连续x次失败后换备用端口
+        m_uConFailTime = 0;
+        m_uPort = (_Douyu_DanmuServer_Port_Backup == m_uPort)?_Douyu_DanmuServer_Port:_Douyu_DanmuServer_Port_Backup;
+    }
+    //pTcpDanmuSoc->connectToHost(_Douyu_DanmuServer_HostName, m_uPort);
+    pTcpDanmuSoc->connectToHost("36.155.10.62", m_uPort);
     if (pTcpDanmuSoc->waitForConnected(2000)) {
         qDebug("Connected!");
+        m_uConFailTime=0;
     }
     else {
         pTcpDanmuSoc->abort();
         qDebug("aborted!");
+        ++m_uConFailTime;
     }
 }
 

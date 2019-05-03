@@ -26,6 +26,7 @@ public:
     singleCar(QObject *pParent = nullptr);
     ~singleCar();
     QList<ChatMsg> getRank();
+    void resetRank();
 signals:
     void sigUpdateRank();
 private slots:

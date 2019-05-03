@@ -8,6 +8,8 @@ QT       += core gui network
 
 QT += widgets
 
+QT += sql
+
 TARGET = Douyu_Danmu_Pro
 TEMPLATE = app
 
@@ -19,7 +21,8 @@ SOURCES += main.cpp\
     douyutcpsocket.cpp \
     stringgenerator.cpp \
     singlecar.cpp \
-    scarrankmodel.cpp
+    scarrankmodel.cpp \
+    sqlmgr.cpp
 
 HEADERS  += mainwindow.h \
     networkaccess.h \
@@ -28,7 +31,8 @@ HEADERS  += mainwindow.h \
     douyutcpsocket.h \
     stringgenerator.h \
     singlecar.h \
-    scarrankmodel.h
+    scarrankmodel.h \
+    sqlmgr.h
 
 FORMS    += mainwindow.ui
 

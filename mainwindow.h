@@ -4,14 +4,17 @@
 #include <QMainWindow>
 #include <QIcon>
 #include <QSystemTrayIcon>
+#include <QDate>
 #include "networkaccess.h"
 #include "jsonparse.h"
 #include "douyutcpsocket.h"
 
+class QTimer;
 class QThread;
 class QLabel;
 class ChatMsg;
 class singleCar;
+class SqlMgr;
 class SCarRankModel;
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -34,7 +37,7 @@ private slots:
     void start();
     void onClear();
     void onClose();
-    void onUpload();
+    void onUpload(bool bAutoUpload = false);
     void onExpand();
     void onTrayClick(QSystemTrayIcon::ActivationReason reason);
     void onTrayMsgClick();
@@ -43,11 +46,13 @@ private slots:
     void postFinished();
     void onUpdateStat(const QString &str);
     void onLog(const QString &str);
-
+    void onBtnPic();
+    void onAutoUpload();
+    void onCheckUploadTime();
 protected:
     void closeEvent(QCloseEvent *event);
 private:
-    void uploadMsg(const ChatMsg* msg);
+    void uploadMsg(const ChatMsg* msg, const QDate &msgDate);
 private:
     Ui::MainWindow *ui;
     NetworkAccess *network_access;
@@ -56,11 +61,14 @@ private:
     QSystemTrayIcon *m_pTray{nullptr};
     QIcon m_iconMsg;
     QLabel *m_pLabStat{nullptr};
+    QLabel *m_pLabTime{nullptr};
     singleCar *m_pSCar{nullptr};
+    SqlMgr *m_pSqlMgr{nullptr};
     SCarRankModel *m_pRankModel{nullptr};
     QNetworkAccessManager *m_pNetMgr{nullptr};
     QThread *m_pThSocket{nullptr};
     QThread *m_pThSCar{nullptr};
+    QTimer *m_pTimerUpdate{nullptr};
 };
 
 #endif // MAINWINDOW_H

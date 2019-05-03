@@ -13,6 +13,9 @@
 #include <QStatusBar>
 #include <QLabel>
 #include <QThread>
+#include <QFileDialog>
+#include <QTimer>
+#include "sqlmgr.h"
 
 MainWindow::MainWindow(QWidget *parent):
     QMainWindow(parent),
@@ -20,10 +23,10 @@ MainWindow::MainWindow(QWidget *parent):
 {
     m_bTray = QSystemTrayIcon::isSystemTrayAvailable();
 
-    if(m_bTray){
-        m_bTray = QSystemTrayIcon::supportsMessages();
-    }
-    m_bTray =false;
+    //if(m_bTray){
+    //    m_bTray = QSystemTrayIcon::supportsMessages();
+    //}
+    //m_bTray =false;
     m_iconMsg =QIcon(":/res/bad.png");
     ui->setupUi(this);
     ui->plainTextEdit->setMaximumBlockCount(10000);
@@ -34,12 +37,20 @@ MainWindow::MainWindow(QWidget *parent):
     ui->cmbRoom->addItem("99999","99999");
     ui->cmbRoom->addItem("156277","156277");
     ui->cmbRoom->addItem("610588","610588");
+    for (int i=0;i<24;++i) {
+        ui->comboAutoUpTime->addItem(QString("上传时间：%1点").arg(i), i);
+    }
+
+    ui->lineEdit_port->hide();
+    //ui->btnUploadPic->hide();
 
     //状态栏
     QStatusBar * sBar = statusBar();//创建状态栏
     m_pLabStat = new QLabel(this);
     m_pLabStat->setText(tr("未连接"));
+    m_pLabTime = new QLabel(this);
     sBar->addWidget(m_pLabStat);//状态栏添加组件
+    sBar->addWidget(m_pLabTime);
 
     m_pRankModel = new SCarRankModel();
     ui->tableRank->setModel(m_pRankModel);
@@ -53,11 +64,20 @@ MainWindow::MainWindow(QWidget *parent):
     m_pThSCar = new QThread();
     m_pSCar->moveToThread(m_pThSCar);
     m_pThSCar->start();
+    m_pSqlMgr = new SqlMgr();
+    m_pTimerUpdate = new QTimer(this);
+    m_pTimerUpdate->setInterval(60*1000);
+    if(ui->checkAutoUpload->isChecked()){
+        m_pTimerUpdate->start();
+    }
+    connect(m_pTimerUpdate, SIGNAL(timeout()),this,SLOT(onCheckUploadTime()));
     connect(ui->pushButton,SIGNAL(clicked(bool)),this,SLOT(start()));
     connect(ui->btnClear,SIGNAL(clicked(bool)),this,SLOT(onClear()));
     connect(ui->btnStop,SIGNAL(clicked(bool)),this,SLOT(onClose()));
-    connect(ui->btnUpload,SIGNAL(clicked(bool)),this,SLOT(onUpload()));
+    connect(ui->btnUpload,SIGNAL(clicked(bool)),this,SLOT(onUpload(bool)));
     connect(ui->btnExpand,SIGNAL(clicked(bool)),this,SLOT(onExpand()));
+    connect(ui->btnUploadPic,SIGNAL(clicked(bool)),this,SLOT(onBtnPic()));
+    connect(ui->checkAutoUpload, SIGNAL(stateChanged(int)),this,SLOT(onAutoUpload()));
     connect(ui->cmbRoom, SIGNAL(currentIndexChanged(int)), this, SLOT(onCmbChange(int)));
     connect(network_access,SIGNAL(pageLoadFinished(QString)),
             this,SLOT(htmlContent(QString)));
@@ -69,11 +89,10 @@ MainWindow::MainWindow(QWidget *parent):
     connect(m_pSCar,SIGNAL(sigUpdateRank()),this,SLOT(onUpdateRank()));
     if(m_bTray)
     {
-       auto minimizeAction = new QAction(tr("close"), this);
-        connect(minimizeAction, &QAction::triggered, this, &QWidget::close);
-
+        auto Action = new QAction(tr("close"), this);
+        connect(Action, &QAction::triggered, this, &QWidget::close);
         auto pMenu = new QMenu(this);
-        pMenu->addAction(minimizeAction);
+        pMenu->addAction(Action);
         m_pTray = new QSystemTrayIcon(this);
         m_pTray->setIcon(m_iconMsg);
         m_pTray->setContextMenu(pMenu);
@@ -93,11 +112,13 @@ MainWindow::~MainWindow()
     delete m_pSCar;
     delete tcpSocket;
     delete network_access;
+    delete m_pSqlMgr;
     delete ui;
 }
 
 void MainWindow::start()
 {
+    auto uPort = ui->lineEdit_port->text().toUInt();
     QString roomid = (ui->lineEdit_roomid->text()).trimmed();
     QRegExp rx("[0-9a-zA-Z]+");
     rx.setMinimal(false);
@@ -113,6 +134,7 @@ void MainWindow::start()
         }
         else
         {
+            //tcpSocket->setPort(uPort);
             qDebug()<<"connectting,roomid:"<<roomid;
             emit sigConnectDM(roomid);
         }
@@ -159,10 +181,10 @@ namespace  {
         qDebug() << "mkYesSIGN:"<<str;
         return str;
     }
-    QString mkCreateSQL(const ChatMsg&msg){
+    QString mkCreateSQL(const ChatMsg&msg, const QDate &DateNow){
         QString str="{";
         QMap<QString,QString> hs;
-        hs["dm_time"]=QDateTime::currentDateTime().toString("yyyy-MM-dd 00:00:00");
+        hs["dm_time"]=DateNow.toString("yyyy-MM-dd 00:00:00");
         hs["nn"]=msg.nn;
         hs["lev"]=QString::number(msg.level);
         hs["txt"]=msg.txt;
@@ -178,19 +200,35 @@ namespace  {
         return str;
     }
 }
-void MainWindow::onUpload()
+void MainWindow::onUpload(bool bAutoUpload /*= false*/)
 {
     if(nullptr == m_pNetMgr){
         m_pNetMgr = new QNetworkAccessManager();
     }
     auto count = m_pRankModel->rowCount();
+
+    auto DateNow = QDate::currentDate();
+    if(bAutoUpload){
+        DateNow = DateNow.addDays(-1);//每天x点上传昨天数据
+    }
+
+    m_pSqlMgr->begin();
     for (int i=0; i<count; ++i) {
         auto vMsg = m_pRankModel->data(m_pRankModel->index(i,0),Qt::UserRole+1);
         ChatMsg msg;
         if(vMsg.canConvert<ChatMsg>()){
             msg = vMsg.value<ChatMsg>();
-            uploadMsg(&msg);
+            uploadMsg(&msg, DateNow);
+            m_pSqlMgr->insertSCmsg(msg, DateNow);
         }
+    }
+    m_pSqlMgr->end();
+
+    onLog(QString("%1上传统计结果").arg(bAutoUpload?"自动":"手动"));
+
+    //if(bAutoUpload)
+    {
+        m_pSCar->resetRank();
     }
 }
 
@@ -210,7 +248,7 @@ void MainWindow::onExpand()
     }
 }
 
-void MainWindow::uploadMsg(const ChatMsg* msg){
+void MainWindow::uploadMsg(const ChatMsg* msg, const QDate &msgDate){
     if(nullptr == msg){
         return;
     }
@@ -218,7 +256,7 @@ void MainWindow::uploadMsg(const ChatMsg* msg){
     QMap<QString, QString> hsReq;
     hsReq["s"] = "App.Table.Create";
     hsReq["model_name"] = "dy562590";
-    hsReq["data"] = mkCreateSQL(*msg);
+    hsReq["data"] = mkCreateSQL(*msg, msgDate);
     hsReq["app_key"] = _YESAPISERVER_KEY;
     QString strSign = mkYesSIGN(hsReq);
     hsReq["sign"] = strSign;
@@ -302,12 +340,80 @@ void MainWindow::onLog(const QString &str)
     ui->plainTextLog->appendHtml(tm.toString("MM-dd hh:mm:ss ")+str);
 }
 
+void MainWindow::onBtnPic()
+{
+    QString file_path = QFileDialog::getOpenFileName(this, "请选择文件路径...", "./");
+    if(file_path.isEmpty())
+    {
+        return;
+    }
+    QFile fi(file_path);
+    if(!fi.open(QIODevice::ReadOnly)){
+        return;
+    }
+    if(nullptr == m_pNetMgr){
+        m_pNetMgr = new QNetworkAccessManager();
+    }
+
+    QByteArray data = fi.read(fi.bytesAvailable());
+    fi.close();
+    QNetworkRequest request;
+    QMap<QString, QString> hsReq;
+
+    /*hsReq["s"] = "App.CDN.UploadImgByBase64";
+    hsReq["app_key"] = _YESAPISERVER_KEY;
+    hsReq["file"] = data.toBase64();
+    hsReq["file_name"] = "WangPei.jpg";
+    hsReq["file_type"] = "image/jpg";
+    QString strSign = mkYesSIGN(hsReq);
+    hsReq["sign"] = strSign;
+    auto url = mkUrl(hsReq);
+    request.setHeader(QNetworkRequest::ContentTypeHeader,"application/x-www-form-urlencoded");
+    request.setUrl(QUrl(url));//setEncodedUrl
+    auto pReply = m_pNetMgr->post(request, data);
+    qDebug() << "start post:"<<url;
+    connect(pReply, &QNetworkReply::finished, this, &MainWindow::postFinished);*/
+
+    hsReq["s"] = "App.CDN.UploadImg";
+    hsReq["app_key"] = _YESAPISERVER_KEY;
+    hsReq["file"] = "application/octet-stream";
+    QString strSign = mkYesSIGN(hsReq);
+    hsReq["sign"] = strSign;
+    auto url = mkUrl(hsReq);
+    request.setHeader(QNetworkRequest::ContentTypeHeader,"application/octet-stream");
+    request.setUrl(QUrl(url));//setEncodedUrl
+    auto pReply = m_pNetMgr->post(request, data);
+    qDebug() << "start post:"<<url;
+    connect(pReply, &QNetworkReply::finished, this, &MainWindow::postFinished);
+}
+
+void MainWindow::onAutoUpload()
+{
+    bool bAuto = ui->checkAutoUpload->isChecked();
+    if(bAuto){
+        m_pTimerUpdate->start();
+    }else{
+        m_pTimerUpdate->stop();
+    }
+}
+
+void MainWindow::onCheckUploadTime()
+{
+    auto iHour = ui->comboAutoUpTime->currentData().toInt();
+    qDebug()<<"iHout time:"<<iHour;
+    auto timeNow = QTime::currentTime();
+    qDebug()<<"timeNow time:"<<timeNow.hour()<<":"<<timeNow.minute();
+    if(iHour == timeNow.hour() && 0 == timeNow.minute()){
+        onUpload(true);
+    }
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    emit sigCloseDM();
     if(m_pTray)
     {
         if(m_pTray->isVisible()){
+            emit sigCloseDM();
             event->accept();
         }else{
             m_pTray->show();
@@ -316,6 +422,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
         }
         return;
     }
+    emit sigCloseDM();
     event->accept();
 }
 
@@ -350,15 +457,12 @@ void MainWindow::htmlContent(const QString html)
 
 void MainWindow::showChatMessage(const QMap<QString, QString> &messageMap)
 {
-    /*QString nickname = messageMap["nn"];
-    QString level = messageMap["level"];
-    QString txt = messageMap["txt"];
-    QString message = QString("<font style=\"color:#3B91C5;font-family:Microsoft YaHei\">%1</font> <font style=\"color:#E34945;font-family:consolas\">[lv.%2]</font><font style=\"color:#3B91C5;font-family:Microsoft YaHei\">:</font> <font style=\"color:#454545;font-family:Microsoft YaHei\">%3</font>").arg(nickname).arg(level).arg(txt);
-    */
     auto strMsg = StringGenerator::getString(messageMap);
     if(!strMsg.isEmpty())
         ui->plainTextEdit->appendHtml(strMsg);
 
+    auto time = QDateTime::currentDateTime();
+    m_pLabTime->setText(time.toString(" 最后弹幕时间：MM-dd hh:mm:ss"));
     if(m_bTray)
     {
         //m_pTray->showMessage(messageMap["nn"], messageMap["txt"], m_iconMsg, 10);

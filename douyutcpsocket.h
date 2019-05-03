@@ -18,7 +18,7 @@ class DouyuTcpSocket:public QObject
 public:
     DouyuTcpSocket(QObject *parent = nullptr);
     ~DouyuTcpSocket();
-
+    void setPort(unsigned short port);
 signals:
 
     void chatMessage(const QMap<QString, QString> &massage);
@@ -80,6 +80,8 @@ private:
     QTimer *timerReconnect{nullptr};
     QTcpSocket *pTcpDanmuSoc{nullptr};
     QByteArray outBlock;
+    unsigned short m_uPort{0};
+    unsigned short m_uConFailTime{0};
 };
 
 #endif // DOUYUTCPSOCKET_H

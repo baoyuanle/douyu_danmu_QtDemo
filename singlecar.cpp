@@ -2,6 +2,7 @@
 
 QMap<unsigned int,QMap<QString,ChatMsg>> g_mapUser;//uid, txt, ChatMsg
 QMutex g_mt4map;
+QMutex g_mt4LsRank;
 singleCar::singleCar(QObject *pParent)
     :QObject(pParent)
 {
@@ -16,6 +17,8 @@ singleCar::~singleCar()
 
 QList<ChatMsg> singleCar::getRank()
 {
+    //qDebug()<<"singleCar::getRank ThreadId:"<<QThread::currentThreadId();
+    QMutexLocker lock(&g_mt4LsRank);
     QList<ChatMsg> lsRank;
     //for(auto &msg:m_lsRank){
     //    qDebug()<<"lsRank: "<<msg.txt<<"cnt:"<<msg.count;
@@ -39,6 +42,23 @@ QList<ChatMsg> singleCar::getRank()
         lsRank.append(msg);
     }
     return lsRank;
+}
+
+void singleCar::resetRank()
+{
+    //qDebug()<<"singleCar::resetRank ThreadId:"<<QThread::currentThreadId();
+    {
+        QMutexLocker lock(&g_mt4map);
+        QMap<unsigned int,QMap<QString,ChatMsg>> mapTmp;
+        g_mapUser.swap(mapTmp);
+    }
+    {
+        QMutexLocker lock(&g_mt4LsRank);
+        for(auto& rank :m_lsRank){
+            rank = ChatMsg();
+        };
+    }
+    emit sigUpdateRank();
 }
 
 void singleCar::onNewMsg(const QMap<QString, QString> &massage)
@@ -97,6 +117,8 @@ void singleCar::onNewMsg(const QMap<QString, QString> &massage)
 
 void singleCar::updateRank(const ChatMsg &msg)
 {
+    //qDebug()<<"singleCar::updateRank ThreadId:"<<QThread::currentThreadId();
+    QMutexLocker lock(&g_mt4LsRank);
     int iLowestIdx=0;
     for(int i=0;i<RANK_SCar_NUM; ++i)
     {
